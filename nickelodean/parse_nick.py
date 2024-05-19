@@ -248,17 +248,29 @@ def parse_table(
 main_body = wiki_soup.find(name="div", class_="mw-content-ltr mw-parser-output")
 c: NavigableString
 nhd: NickelodeanHeaderDepth = NickelodeanHeaderDepth()
-for i, c in enumerate(main_body.contents[7].children):
+table_list: list[pl.DataFrame] = []
+for c in main_body.contents[7].children:
     # skip blank
     if c.name is None:
         continue
 
-    print(i)
     # updating depth level between 2 and 5
     if c.name in ["h2", "h3", "h4", "h5"]:
         nhd.update_depth(ns=c)
     # reading in table
     elif c.name == "table":
+        if nhd.h2 not in ["Current programming", "Former Programming"]:
+            continue
         print(f"Current Level: {nhd.depth}, {nhd}")
-        parse_table(c=c, nhd=nhd)
+        df: pl.DataFrame = parse_table(c=c, nhd=nhd)
+        table_list.append(df)
+
+    # don't want anything after this
+    if nhd.h2 == "Former programming":
+        break
+    if nhd.h3 == "Former aquired programming":
+        break
     time.sleep(0.5)
+
+nick_df: pl.DataFrame = pl.concat(table_list)
+print(nick_df)
