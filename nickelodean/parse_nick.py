@@ -108,7 +108,7 @@ __col_map: dict[str, str] = {
 }
 
 
-def _remove_notes(col_name: str) -> pl.Expr:
+def _remove_notes(col_name: str, remove_shorts: bool = False) -> pl.Expr:
     """
     Removes any Wikipedia notes from column name.
     Just split by "[" and then take first element.
@@ -117,16 +117,23 @@ def _remove_notes(col_name: str) -> pl.Expr:
     Former programming > Original programming > live-action > Comedy
     > The Adventrues of Pete & Pete.
     """
-    # return pl.col(col_name).str.split("[").list[0]
-    return (
-        pl.col(col_name)
-        # getting rid of notes
-        .str.split("[")
-        .list[0]
-        # getting rid of notes
-        .str.split(")")
-        .list[-1]
-    )
+    if remove_shorts:
+        return (
+            pl.col(col_name)
+            # getting rid of notes
+            .str.split("[")
+            .list[0]
+            # getting rid of shorts part
+            .str.split(")")
+            .list[-1]
+        )
+    else:
+        return (
+            pl.col(col_name)
+            # getting rid of notes
+            .str.split("[")
+            .list[0]
+        )
 
 
 def _convert_date(col_name: str) -> pl.Expr:
@@ -266,6 +273,8 @@ def _is_date(v: str) -> bool:
         # second must be year
         if len(split_by_space[1]) == 4 and split_by_space[1][0] in ["1", "2"]:
             return True
+        else:
+            return False
     return True
 
 
@@ -328,7 +337,7 @@ def _parse_former_shows(
         # has 1: need to insert previous date
         elif n_dates == 1:
             row_vals.insert(1, prev_premiere_date)
-        # has 0: start of date queue
+        # has 0: start of annoying date queue
         elif n_dates == 0:
             repeat_title_stack = row_vals
             are_combining_dates = True
@@ -379,8 +388,8 @@ def _parse_former_shows(
         # removing any notes
         .with_columns(
             _remove_notes("Title").name.keep(),
-            _remove_notes("PremiereDate").name.keep(),
-            _remove_notes("FinaleDate").name.keep(),
+            _remove_notes("PremiereDate", remove_shorts=True).name.keep(),
+            _remove_notes("FinaleDate", remove_shorts=True).name.keep(),
         )
         # second round of adjustments
         .with_columns(
