@@ -127,6 +127,122 @@ class NickelodeanHeaderDepth:
         )
 
 
+_current_col_map: dict[str, str] = {
+    "Title": "Title",
+    "Premiere date": "PremiereDate",
+    "Current season": "NumberSeasons",
+    "Notes": "_notes",  # will drop this one
+}
+
+
+def _parse_current_shows(
+    c: NavigableString,
+    nhd: NickelodeanHeaderDepth,
+) -> pl.DataFrame:
+    """
+    Parses table that is under H2: "Current Shows".
+
+    Can use `c.text` to split by "\n" to get what we want.
+    Then each "row" has 6 elements.
+    But also first 2 elements are blank, so want to drop those.
+    Then, also not considering notes.
+    """
+    # determining number of columns in table
+    rows: list[str] = [r.strip() for r in str(c.text).split("\n\n")[1:] if r != ""]
+    cols: list[str] = rows.pop(0).split("\n")
+    # doing fix for notes, sometimes was separated by "\n\n"
+    if "Notes" in rows[0]:
+        cols.append("Notes")
+        rows.pop(0)
+
+    # making schema
+    table_schema: dict[str, pl.DataType] = {
+        _current_col_map[col]: pl.Utf8 for col in cols
+    }
+
+    table_vals: list[list[str]] = []
+    for row in rows:
+        row_vals: list[str] = row.split("\n")
+        # sometimes does not have notes when it should be here
+        if len(row_vals) != len(cols):
+            row_vals.append(None)
+        table_vals.append(row_vals)
+    # appending blank rows to fix incorrect schema inference
+    if len(cols) == 2:
+        table_vals.append([None, None])
+
+    # initial creation of df
+    table_df: pl.DataFrame = pl.DataFrame(
+        data=table_vals,
+        schema=table_schema,
+    )
+    # if we don't have NumberSeasons, add it
+    if "NumberSeasons" not in table_schema.keys():
+        table_df = table_df.with_columns(pl.lit(None, pl.Utf8).alias("NumberSeasons"))
+    # if we have notes, drop it
+    if "_notes" in table_schema.keys():
+        table_df = table_df.drop("_notes")
+
+    # cleanup and adding header columns
+    table_df = (
+        table_df
+        # filter out potential extra row
+        .filter(pl.col("Title").is_not_null())
+        .with_columns(
+            # removing notes from Title
+            pl.col("Title").str.split("[").list[0].name.keep(),
+            # converting PremiereDate
+            pl.when(pl.col("PremiereDate").str.contains(",", literal=True))
+            .then(
+                pl.col("PremiereDate").str.strptime(pl.Date, "%B %-d, %Y", strict=False)
+            )
+            .otherwise(pl.col("PremiereDate").str.strptime(pl.Date, "%Y", strict=False))
+            .name.keep(),
+            # converting number of seasons
+            pl.col("NumberSeasons").cast(pl.UInt16, strict=False).name.keep(),
+            # blank finale date
+            pl.lit(None, pl.Date).alias("FinaleDate"),
+            # headers 2, 3, 4, 5
+            pl.lit(nhd.h2, pl.Utf8).alias("H2"),
+            pl.lit(nhd.h3, pl.Utf8).alias("H3"),
+            pl.lit(nhd.h4, pl.Utf8).alias("H4"),
+            pl.lit(nhd.h5, pl.Utf8).alias("H5"),
+        )
+        .select(
+            "H2",
+            "H3",
+            "H4",
+            "H5",
+            "Title",
+            "PremiereDate",
+            "FinaleDate",
+            "NumberSeasons",
+        )
+    )
+    return table_df
+
+
+def parse_table(
+    c: NavigableString,
+    nhd: NickelodeanHeaderDepth,
+) -> pl.DataFrame:
+    """
+    Parses table.
+
+    Final Schema is:
+    - H2: pl.Utf8
+    - H3: pl.Utf8
+    - H4: pl.Utf8
+    - H5: pl.Utf8
+    - Title: pl.Utf8
+    - PremiereDate: pl.Date
+    - EndDate: pl.Date
+    - NumberSeasons: pl.Uint16
+    """
+    if nhd.h2 == "Current programming":
+        return _parse_current_shows(c=c, nhd=nhd)
+
+
 # TODO: find proper way to get "meta"
 # main_body = wiki_soup.find(name="meta")
 main_body = wiki_soup.find(name="div", class_="mw-content-ltr mw-parser-output")
@@ -138,8 +254,11 @@ for i, c in enumerate(main_body.contents[7].children):
         continue
 
     print(i)
-    # properly modifying depth level between 2 and 5
+    # updating depth level between 2 and 5
     if c.name in ["h2", "h3", "h4", "h5"]:
         nhd.update_depth(ns=c)
-    print(f"Current Level: {nhd.depth}, {nhd}")
+    # reading in table
+    elif c.name == "table":
+        print(f"Current Level: {nhd.depth}, {nhd}")
+        parse_table(c=c, nhd=nhd)
     time.sleep(0.5)
