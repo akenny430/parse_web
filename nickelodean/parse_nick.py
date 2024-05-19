@@ -208,11 +208,14 @@ def _parse_current_shows(
             pl.lit(nhd.h4, pl.Utf8).alias("H4"),
             pl.lit(nhd.h5, pl.Utf8).alias("H5"),
         )
+        # adding sub index
+        .with_row_index(name="SubIndex")
         .select(
             "H2",
             "H3",
             "H4",
             "H5",
+            "SubIndex",
             "Title",
             "PremiereDate",
             "FinaleDate",
