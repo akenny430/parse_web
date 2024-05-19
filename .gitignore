@@ -1,2 +1,7 @@
 # venv
 parsewiki_env/*
+
+# any outputs for analysis
+*.parquet
+*.csv
+*.pdf
