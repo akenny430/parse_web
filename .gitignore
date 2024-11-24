@@ -1,5 +1,5 @@
 # venv
-parsewiki_env/*
+.venv/*
 
 # any outputs for analysis
 *.parquet
