@@ -5,3 +5,6 @@
 *.parquet
 *.csv
 *.pdf
+
+# any scrap files
+*/scrap.py
